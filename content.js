@@ -1,9 +1,13 @@
-  const startRedmineExtension = async () => {
+const defaultType = "12 - Développement / travaux";
+const defaultProject = document.querySelector("#project-jump .drdn-trigger").textContent.trim();
+
+const startRedmineExtension = async () => {
     const statusEl = document.getElementById("temps-passe-status");
     const resultEl = document.getElementById("temps-passe-result");
   
     try {
       const entries = await fetchTimeEntries();
+      console.log(entries);
       const insufficientDays = entries.filter(day => day.total < 8);
   
       // Auto-refresh popup if there are missing days
@@ -12,10 +16,12 @@
         return;
       }
   
+      const tasks = await fetchTasks();
+      const {projects, types} = await fetchProjectsAndTypes();
+
       statusEl.textContent = "Days with < 8 hours logged:";
       for (const day of insufficientDays) {
-        const tasks = await fetchTasks(day.date);
-        renderDayForm(day, tasks, resultEl);
+        renderDayForm(day, tasks, projects, types, resultEl);
       }
     } catch (error) {
       statusEl.textContent = "Error fetching data!";
@@ -23,17 +29,25 @@
     }
   };
   
-  function renderDayForm(day, tasks, container) {
+  function renderDayForm(day, tasks, projects, types, container) {
     const dayDiv = document.createElement("div");
     dayDiv.style.marginBottom = "15px";
   
     dayDiv.innerHTML = `
       <strong>${day.date}:</strong> ${8 - day.total}h missing
       <form id="temps-passe-form-${day.date.replace(/-/g, '')}">
-        <label>Task:</label>
-        <select id="temps-passe-task-${day.date.replace(/-/g, '')}">
-          <option value="">Nothing</option>
-          ${tasks.map(task => `<option value="${task.id}">${task.subject}</option>`).join("")}
+        <div style="display: flex;">
+          <select id="temps-passe-project-${day.date.replace(/-/g, '')}">
+            ${projects.map(task => `<option value="${task.id}" ${task.name.includes(defaultProject) ? "selected" : ""}>${task.name}</option>`).join("")}
+          </select>
+          <select id="temps-passe-task-${day.date.replace(/-/g, '')}">
+            <option value="">(No task)</option>
+            ${tasks.map(task => `<option value="${task.id}">${task.name}</option>`).join("")}
+          </select>
+        </div>
+        <label>Type:</label>
+        <select id="temps-passe-type-${day.date.replace(/-/g, '')}">
+          ${types.map(task => `<option value="${task.id}" ${task.name.includes(defaultType) ? "selected" : ""}>${task.name}</option>`).join("")}
         </select><br/>
         <label>Description:</label>
         <input type="text" id="temps-passe-desc-${day.date.replace(/-/g, '')}" placeholder="Work description" required /><br/>
@@ -84,9 +98,12 @@
       alert("Failed to submit time entry.");
       console.error(await response.text());
     }
-  }async function fetchTimeEntries() {
-    const url = `${window.location.origin}/time_entries?c%5B%5D=project&c%5B%5D=spent_on&c%5B%5D=user&c%5B%5D=activity&c%5B%5D=issue&c%5B%5D=comments&c%5B%5D=hours&f%5B%5D=spent_on&f%5B%5D=user_id&f%5B%5D=&group_by=&op%5Bspent_on%5D=%2A&op%5Buser_id%5D=%3D&per_page=100&set_filter=1&sort=spent_on%3Adesc&t%5B%5D=hours&t%5B%5D=&utf8=✓&v%5Buser_id%5D%5B%5D=me`;
+  }
   
+  async function fetchTimeEntries() {
+    const url = `${window.location.origin}/time_entries?sort=spent_on&c%5B%5D=project&c%5B%5D=spent_on&c%5B%5D=user&c%5B%5D=activity&c%5B%5D=issue&c%5B%5D=comments&c%5B%5D=hours&f%5B%5D=spent_on&f%5B%5D=user_id&f%5B%5D=&group_by=&op%5Bspent_on%5D=%2A&op%5Buser_id%5D=%3D&per_page=100&set_filter=1&sort=spent_on%3Adesc&t%5B%5D=hours&t%5B%5D=&utf8=✓&v%5Buser_id%5D%5B%5D=me`;
+
+
     // Fetch the HTML content of the time entries page
     const response = await fetch(url, { credentials: "include" });
     if (!response.ok) throw new Error("Failed to fetch time entries page");
@@ -98,8 +115,7 @@
   
     // Select all time entry rows
     const rows = [...doc.querySelectorAll("tr.time-entry")];
-    const timeEntries = {};
-  
+    const timeEntries = {};  
     rows.forEach(row => {
       const dateElement = row.querySelector(".spent_on");
       const hoursElement = row.querySelector(".hours");
@@ -139,6 +155,34 @@
     return days;
   }
   
+  async function fetchProjectsAndTypes() {
+    const url = `${window.location.origin}/time_entries/new`;
+
+    // Fetch the HTML content of the new time entry page
+    const response = await fetch(url, { credentials: "include" });
+    if (!response.ok) throw new Error("Failed to fetch new time entry page");
+
+    // Parse the HTML response
+    const htmlText = await response.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlText, "text/html");
+
+    // Select all project options
+    const projectOptions = [...doc.querySelectorAll("#time_entry_project_id option")];
+    const projects = projectOptions.map(option => ({
+      id: option.value,
+      name: option.textContent.trim()
+    }));
+
+    // Select all activity options
+    const typeOptions = [...doc.querySelectorAll("#time_entry_activity_id option")];
+    const types = typeOptions.map(option => ({
+      id: option.value,
+      name: option.textContent.trim()
+    }));
+
+    return { projects, types };
+  }
 
   async function fetchTasks(day) {
   
@@ -157,17 +201,17 @@
     // Select all issue rows
     const issues = [...doc.querySelectorAll("tr.issue")];
     const tasks = [];
-  
+
     issues.forEach(issue => {
-      const subjectElement = issue.querySelector(".subject a");
+      const nameElement = issue.querySelector(".name a");
       const updatedOnElement = issue.querySelector(".updated_on");
   
-      if (subjectElement && updatedOnElement) {
+      if (nameElement && updatedOnElement) {
         const updatedOn = new Date(updatedOnElement.textContent.trim());
         if (updatedOn >= sevenDaysAgo) {
           tasks.push({
-            id: subjectElement.href.split("/").pop(),
-            subject: subjectElement.textContent.trim()
+            id: nameElement.href.split("/").pop(),
+            name: nameElement.textContent.trim()
           });
         }
       }
