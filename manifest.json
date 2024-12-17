@@ -1,0 +1,24 @@
+{
+    "manifest_version": 3,
+    "name": "Redmine Temps Passé Checker",
+    "version": "1.0",
+    "description": "Detects days with less than 8 hours logged in Redmine.",
+    "permissions": [
+        "activeTab",
+        "storage",
+        "scripting"
+    ],
+    "host_permissions": [
+        "https://support.olky.eu/*"
+    ],
+    "content_scripts": [
+        {
+            "matches": [
+                "https://support.olky.eu/*"
+            ],
+            "js": [
+                "content.js"
+            ]
+        }
+    ]
+}
